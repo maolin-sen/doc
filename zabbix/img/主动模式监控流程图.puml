@@ -1,0 +1,10 @@
+@startuml 主动模式监控流程图
+autonumber
+zabbix_agent -> zabbix_server: request:请求刷新主动监控项列表
+zabbix_server -> zabbix_agent: response:主动监控项列表
+zabbix_agent -> zabbix_agent: 更新监控项配置
+zabbix_agent -> zabbix_agent: 查询监控数据
+zabbix_agent -> zabbix_agent: 格式化返回报文
+zabbix_agent -> zabbix_server: send: 监控数据
+zabbix_agent -> zabbix_agent: sleep
+@enduml

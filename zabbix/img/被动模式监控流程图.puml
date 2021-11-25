@@ -1,0 +1,8 @@
+@startuml main函数启动流程
+autonumber
+zabbix_server -> zabbix_agent:request
+zabbix_agent -> zabbix_agent:查询监控数据
+zabbix_agent -> zabbix_agent:格式化返回报文
+zabbix_agent -> zabbix_server:response
+zabbix_server -> zabbix_server:sleep
+@enduml

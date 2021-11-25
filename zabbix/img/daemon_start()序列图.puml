@@ -1,0 +1,9 @@
+@startuml daemon_start函数启动流程
+autonumber
+daemon.c -> pid.c: create_pid_file()
+daemon.c -> daemon.c: atexit(daemon_stop)
+daemon.c -> sighandler.c: zbx_set_common_signal_handlers()
+daemon.c -> daemon.c: set_daemon_signal_handlers()
+daemon.c -> sighandler.c: zbx_set_child_signal_handler()
+daemon.c -> server.c: MAIN_ZABBIX_ENTRY()
+@enduml

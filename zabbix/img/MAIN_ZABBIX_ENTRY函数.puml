@@ -1,0 +1,14 @@
+@startuml MAIN_ZABBIX_ENTRY函数启动流程
+autonumber
+server.c -> log.c: zabbix_open_log()
+server.c -> modules.c: zabbix_load_modules()
+server.c -> db.c: DBconnect()
+server.c -> dbconfig.c: DCsync_configuration()
+server.c -> positioninit.c: zbx_check_postinit_tasks()
+server.c -> db.c: DBclose()
+group 循环 [threads.num]
+    server.c -> server.c:get_process_info_by_thread()
+    server.c -> threads.c:zabbix_thread_start(子进程)
+end
+server.c -> server.c: zbx_on_exit()
+@enduml

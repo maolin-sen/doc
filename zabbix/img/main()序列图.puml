@@ -1,0 +1,14 @@
+@startuml main函数启动流程
+autonumber
+server.c -> zbxgetopt.c: zbx_getopt_long()
+server.c -> sysinfo.c: init_metrics()
+sysinfo.c -> sysinfo.c: add_metric()
+server.c -> server.c: zbx_load_config()
+server.c -> cfg.c: parse_cfg_file()
+cfg.c -> cfg.c: _parse_cfg_file()
+server.c -> server.c: zbx_set_defaults()
+server.c -> log.c: zbx_get_log_type()
+server.c -> server.c: zbx_validate_cofing()
+server.c -> event.c: zbx_initialize_events()
+server.c -> daemon.c: daemon_start()
+@enduml
