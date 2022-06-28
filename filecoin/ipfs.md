@@ -1,6 +1,6 @@
 # IPFS
 
-IPFS（InterPlanetary File System）是一个基于内容寻址的、分布式的、新型超媒体传输协议。IPFS是一个分布式文件系统，它的目标是将所有计算设备连接到同一个文件系统，从而成为一个全球统一的存储系统。
+IPFS（InterPlanetary File System）是一个基于内容寻址的、分布式的、新型超媒体传输协议，同时IPFS也是一个分布式文件系统，它的目标是将所有计算设备连接到同一个文件系统，从而成为一个全球统一的存储系统。
 
 IPFS和Filecoin相互促进，共同成长，解决了互联网的数据存储和数据分发的问题，特别是对于无数的区块链项目，IPFS和Filecoin将作为一个基础设施存在。这就是为什么我们看到越来越多的区块链项目采取了IPFS作为存储解决方案，因为它提供了更加便宜、安全、可快速集成的存储解决方案。
 
@@ -57,21 +57,235 @@ IPFS技术积累已经有很多年了，它至少参考了4种技术的优点，
 IPFS技术可以分为多层子协议栈，从上至下为身份层、网络层、路由层、交换层、对象层、文件层、命名层，每个协议栈各司其职，又互相协同。图1-6所示为IPFS协议栈的构成。接下来我们逐一进行解释。
 
 1. 身份层和路由层
-
-对等节点身份信息的生成以及路由规则是通过Kademlia协议生成制定的，该协议实质上是构建了一个分布式哈希表，简称DHT。每个加入这个DSHT网络的节点都要生成自己的身份信息，然后才能通过这个身份信息去负责存储这个网络里的资源信息和其他成员的联系信息。
+    
+    对等节点身份信息的生成以及路由规则是通过Kademlia协议生成制定的，该协议实质上是构建了一个分布式哈希表，简称DHT。每个加入这个DSHT网络的节点都要生成自己的身份信息，然后才能通过这个身份信息去负责存储这个网络里的资源信息和其他成员的联系信息。
 
 2. 网络层
-比较核心，所使用的Libp2p可以支持主流传输层协议。NAT技术能让内网中的设备共用同一个外网IP，我们都体验过的家庭路由器就是这个原理。
+    
+    比较核心，所使用的Libp2p可以支持主流传输层协议。NAT技术能让内网中的设备共用同一个外网IP，我们都体验过的家庭路由器就是这个原理。
 
 3. 交换层
-IPFS吸取了BitTorrent的技术，并在其之上进行了再创新，自研了BitSwap模块。使用BitSwap进行数据的分发和交换，用户上传分享数据会增加信用分，分享得越多信用分越高；用户下载数据会降低信用分，当信用分低于一定值时，将会被其他节点忽略。简单来讲就是，你乐于分享数据，其他节点也乐于发送数据给你，如果你不愿意分享，那么其他节点也不愿意给你数据。
+    
+    IPFS吸取了BitTorrent的技术，并在其之上进行了再创新，自研了BitSwap模块。使用BitSwap进行数据的分发和交换，用户上传分享数据会增加信用分，分享得越多信用分越高；用户下载数据会降低信用分，当信用分低于一定值时，将会被其他节点忽略。简单来讲就是，你乐于分享数据，其他节点也乐于发送数据给你，如果你不愿意分享，那么其他节点也不愿意给你数据。
 
 4. 对象层和文件层
-这两层适合结合起来看，它们管理了IPFS上80%的数据结构，大部分数据对象都是以Merkle-DAG的结构存在，这为内容寻址和去重提供了便利。文件层具有blob、tree、list、commit等多种结构体，并采用与Git类似的方式来支持版本控制。
+    
+    这两层适合结合起来看，它们管理了IPFS上80%的数据结构，大部分数据对象都是以Merkle-DAG的结构存在，这为内容寻址和去重提供了便利。文件层具有blob、tree、list、commit等多种结构体，并采用与Git类似的方式来支持版本控制。
 
 5. 命名层
-具有自我验证的特性（当其他用户获取该对象时，将交换节点公钥进行验签，即验证公钥信息是否与NodeID匹配，从而来验证用户发布对象的真实性），并且加入了IPNS这个巧妙的设计使得哈希过后的内容路径名称可定义，增强可阅读性。
+    
+    具有自我验证的特性（当其他用户获取该对象时，将交换节点公钥进行验签，即验证公钥信息是否与NodeID匹配，从而来验证用户发布对象的真实性），并且加入了IPNS这个巧妙的设计使得哈希过后的内容路径名称可定义，增强可阅读性。
 
+### IPFS协议栈
+
+和HTTP类似，IPFS是基于TCP/IP的应用层协议，同时作为一个分布式的文件系统，IPFS提供了一个支持部署和写入的平台，能够支持大文件的分发和版本管理。
+
+#### 身份层（Identity）
+
+在IPFS网络中，所有的节点都通过唯一的NodeId进行标识，与Bitcoin的地址类似，NodeId是一个公钥的哈希，为了增加攻击者的成本，IPFS使用S/Kademlia中的算法增加创建新身份的成本。
+
+```go
+    difficulty = <integer parameter>
+    n = Node{}
+    do {
+        n.PubKey, n.PrivKey = PKI.genKeyPair()
+        n.NodeId = hash(n.PubKey)
+        p = count_preceding_zero_bits(hash(n.NodeId))
+    } while (p < difficulty)
+```
+
+每一个节点在IPFS代码中都由Node结构体来表示，其中只包含NodeId及一组公私钥对。
+
+```go
+    type NodeId Multihash
+    type Multihash []byte // 自描述加密哈希摘要
+    type PublicKey []byte
+    type PrivateKey []byte // 自描述的私钥
+    type Node struct {
+        NodeId NodeID
+        PubKey PublicKey
+        PriKey PrivateKey
+    }
+```
+
+身份系统的主要功能是标识IPFS网络中的节点。在节点首次建立连接时，节点之间首先交换公钥，并且进行身份信息验证，，比如：检查hash(other.PublicKey)的值是否等于other.NodeId的值。如果校验结果不通过，则用户信息不匹配，节点立即终止连接。
+
+#### 网络层（Network）
+
+IPFS节点与网络中其他成千上万个节点进行连接通信时，可以兼容多种底层传输协议。IPFS的网络通信模式是遵循覆盖网络（Overlay Network）的理念设计的,是一种网络架构上叠加的虚拟化技术模式，它建立在已有网络上的虚拟网，由逻辑节点和逻辑链路构成。
+
+#### 路由层（Routing）
+
+IPFS节点需要一个路由系统，这个路由系统可用于查找同伴节点的网络地址；专门用于服务特定对象的对等节点。IPFS路由层数据结构使用基于S/Kademlia和Coral技术的分布式松散哈希表（DSHT），在设置数据对象大小和使用模式方面，IPFS参考了Coral和Mainline设计思想，因此，IPFS的DHT结构会根据所存储数据的大小进行区分：小的值（等于或小于1KB）直接存储在DHT上；更大的值，DHT只存储值索引，这个索引就是一个节点的NodeId，该节点可以提供对该类型值的具体服务。。DSHT的接口位于libP2P模块中，如下：
+
+```go
+
+    type IpfsRouting interface {
+        ContentRouting //内容路由
+        PeerRouting //节点路由：获取特定NodeId的网络地址
+        ValueStore //数据操作：对DHT中的元数据进行操作
+        Bootstrap(context.Context) error
+    }
+    type ContentRouting interface {
+        Provide(context.Context, *cid.Cid, bool) error // 声明这个节点可一个提供一个大的数据
+        FindProvidersAsync(context.Context, *cid.Cid, int) <-chan pstore.PeerInfo
+    }
+    type PeerRouting interface {
+        FindPeer(context.Context, peer.ID) (pstore.PeerInfo, error)
+    }
+    type ValueStore interface {
+        PutValue(context.Context, string, []byte) error
+        GetValue(context.Context, string) ([]byte, error)
+        GetValues(c context.Context, k string, count int) ([]RecvdVal, error)
+    }
+
+```
+
+从上述代码中可以看到，IPFS的路由实现了3种基本功能：内容路由、节点路由及数据存储。这种实现方式降低了系统的耦合度，开发者可以根据自身业务需求自定义路由，同时不影响其他功能。
+
+#### 交换层（Exchange）
+
+IPFS中的BitSwap协议是协议实验室的一项创新设计，其主要功能是利用信用机制在节点之间进行数据交换。BitSwap协议中存在一个数据交换市场，这个市场包括各个节点想要获取的所有块数据，这些块数据可能来自文件系统中完全不相关的文件，同时这个市场是由IPFS网络中所有节点组成的。这样的数据市场需要创造加密数字货币来实现可信价值交换，这也为协议实验室后来启动
+Filecoin这样区块链项目埋下伏笔。
+
+在IPFS中，数据的分发和交换使用BitSwap协议。BitSwap协议主要负责两件事情：向其他节点请求需要的数据块列表（want_list），以及为其他节点提供已有的数据块列表（have_list）。
+
+```go
+
+type BitSwap struct {
+    ledgers map[NodeId]Ledger //节点账单
+    active map[NodeId]Peer //当前已连接的对等方
+    need_list []Multihash //此节点需要的块数据校验列表
+    have_list []Multihash //此节点已收到的块数据校验列表
+}
+
+```
+当我们需要向其他节点请求数据块或者为其他节点提供数据块时，都会发送BitSwap message消息，其中主要包含了两部分内容：想要的数据块列表（want_list）及对应数据块。消息使用Protobuf进行编码。源码如下：
+
+```protobuf
+
+message Message {
+    message Wantlist {
+        message Entry {
+            optional string block = 1;
+            optional int32 priority = 2; //设置优先级，默认为1
+            optional bool cancel = 3; //是否会撤销条目
+        }
+        repeated Entry entries = 1;
+        optional bool full = 2;
+    }
+    optional Wantlist wantlist = 1;
+    repeated bytes blocks = 2;
+}
+
+```
+在BitSwap系统中，有两个非常重要的模块——需求管理器（WantManager）和决策引擎（Decision-Engine）：前者会在节点请求数据块时在本地返回相应的结果或者发出合适的请求；而后者决定如何为其他节点分配资源，当节点接收到包含want_list的消息时，消息会被转发至决策引擎，引擎会根据该节点的BitSwap账单决定如何处理请求。
+
+我们可以看到一次BitSwap数据交换的全过程及节点的生命周期。在这个生命周期中，节点一般要经历4个状态。
+   * 状态开放（Open）：对等节点间开放待发送BitSwap账单状态，直到建立连接。
+   * 数据发送（Sending）：节点间发送want_list和数据块。
+   * 连接关闭（Close）：节点发送完数据后断开连接。
+   * 节点忽略（Ignored）：节点因为超时、自定义、信用分过低等因素被忽略。
+结合对等节点的源码结构，详细介绍IPFS节点是如何找到彼此的。
+
+```go 
+    type Peer struct {
+        nodeid NodeId
+        ledger Ledger //对等节点之间的分类账单
+        last_seen Timestamp //最后收到消息的时间戳
+        want_list []Multihash //需要的所有块校验
+    }
+    //协议接口:
+    interface Peer {
+        open (nodeid : NodeId, ledger : Ledger);
+        send_want_list (want_list : WantList);
+        send_block(block: Block) -> (complete:Bool);
+        close(final: Bool);
+    }
+```
+
+1. Peer.open(NodeId,Ledger)
+   
+    当节点建立连接时，发送方节点初始化BitSwap信用账单，保存一份对等方的账单或者创建一个新的被清零的信用账单，这取决于节点信用账单一致性。之后，发送方节点将发送一个携带账单的open信息通知接收方节点，接收方节点接收到一个open信息之后，选择是否接受此连接。
+
+    如果接收方根据本地的信用账单数据，发现发送方是一个不可信的节点，例如传输超时、信用分较低、债务率较高等，则接收方会通过ignore_cooldown忽略这个请求，并且断开连接，目的是防范作弊行为。
+    
+    如果连接成功，接收方将用本地信用账单来初始化一个Peer对象，并更新last_seen时间戳。然后，它会将接收到的账单与自己的账单进行比较。如果两个信用账单完全一样，那么这个连接就被开放；如果账单不完全一致，那么此节点会创建一个新的被清零的信用账单，并发送同步此信用账单，以此保证发送方节点和接收方节点的账单一致。
+
+2. Peer.send_want_list(WantList)
+   
+   当连接已经处于开放状态时，发送方节点将会把want_list广播给所有连接的接收方节点。与此同时，接收方节点在收到一个want_list后，会检查自身是否有接收方想要的数据块。如果有，会使用BitSwap策略来发送传输这些数据块。
+
+3. Peer.send_block(Block)
+
+    发送块的方法逻辑很简单，默认发送方节点只传输数据块，接收到所有数据后，接收方节点计算Multihash以验证它是否与预期的匹配，然后返回确认。在完成块的传输后，接收方节点将数据块信息从need_list移到have_list，并且接收方和发送方都同步更新他们的账单列表。如果传输验证失败，则发送方可能发生故障或存在故意攻击接收方的行为，接收方可以拒绝进一步的交易。
+
+4. Peer.close(Bool)
+    
+    对等连接应该在两种情况下关闭：
+    * silent_wait已超时，但未收到来自对方的任何消息（默认BitSwap使用30秒），节点发出Peer.close（false）。
+    * 节点正在退出，BitSwap正在关闭，在这种情况下，节点发出Peer.close（true）。
+
+#### 对象层（Object）
+
+基于分布式哈希表DHT和BitSwap技术，IPFS目标是构造一个庞大的点对点系统，用于快速、稳定的存储和分发数据块。除此之外，IPFS还使用Merkle DAG技术构建了一个有向无环图数据结构，用来存储对象数据。这也是著名的版本管理软件Git所使用的数据结构。Merkle DAG为IPFS提供了很多有用的属性，包括：
+
+   * 内容可寻址：所有内容由多重哈希校验并唯一标识。
+   * 防止篡改：所有内容都通过哈希验证，如果数据被篡改或损坏，在IPFS网络中将会被检测到。
+   * 重复数据删除：保存完全相同内容的所有对象都是相同的，并且只存储一次。这对于索引对象特别有用。
+
+Merkle DAG的对象结构定义如下所示：
+
+```go
+type IPFSLink struct {
+    Name string // 此link的别名
+    Hash Multihash // 目标的加密Hash
+    Size int // 目标总大小
+}
+    type IPFSObject struct {
+    links []IPFSLink // links数组
+    data []byte // 不透明内容数据
+}
+
+```
+
+#### 文件层（File）
+
+IPFS还定义了一组对象，用于在Merkle DAG之上对版本化文件系统进行建模。这个对象模型类似于著名版本控制软件Git的数据结构。
+
+   * 块（block）：一个可变大小的数据块。
+     * Blob对象包含一个可寻址的数据单元，表示一个文件。当文件比较小，不足以大到需要分片时，就以Blob对象的形式存储于IPFS网络之中。
+   * 列表（list）：一个块或其他列表的集合。
+     * List对象由多个连接在一起的Blob组成，通常存储的是一个大文件。从某种意义上说，List的功能更适用于数据块互相连接的文件系统。
+   * 树（tree）：块、列表或其他树的集合。
+     * Tree对象与Git的Tree类似：它代表一个目录，或者一个名字到哈希值的映射表。哈希值表示Blob、List、其他的Tree或Commit。
+   * 提交（commit）：树版本历史记录中的快照。
+     * Commit对象代表任何对象在版本历史记录中的一个快照。它与Git的Commit类似，但它可以指向任何类型的对象
+
+#### 命名层（Naming）
+
+IPFS形成了一个内容可寻址的DAG对象，我们可以在IPFS网络中发布不可更改的数据，甚至可以跟踪这些对象的版本历史记录。但是，存在一个很严重的问题：当数据对象的内容更新后，同时发生改变的还有内容地址的名称。我们需要一种能在易变环境中保持固定名称的方案，为此，协议实验室团队为IPFS设计了IPNS星际文件命名系统模块。
+
+##### 自验证命名
+
+使用自验证的命名方案给了我们一种在加密环境下、在全局命名空间中，构建可自行认证名称的方式。模式如下：
+
+* 通过NodeId=hash(node.PubKey)，生成IPFS节点信息。
+* 给每个用户分配一个可变的命名空间，由之前生成的节点ID信息作为地址名称，在此路径下：/ipns/。
+* 一个用户可以在此路径下发布一个用自己私钥签名的对象，比如：/ipns/XLF2ipQ4jD3UdeX5xp1KBgeHRhemUtaA8Vm/。
+* 当其他用户获取对象时，他们可以检测签名是否与公钥和节点信息相匹配，从而验证用户发布对象的真实性，达到了可变状态的获取。
+
+##### 人类友好名称
+
+虽然IPNS是重新命名地址的良好方式，但是对用户来说，却不是十分友好和利于记忆的，因为它使用很长的哈希值作为名称，这样的名称很难被记住。因此，IPFS使用下面的技术来增加IPNS的用户友好度。
+
+1. 对等节点链接
+    
+    遵循自验证文件系统（SFS）的设计理念，用户可以将其他用户节点的对象直接链接到自己的命名空间下。这也有利于创建一个更可信的网络。
+
+2. DNS TXT IPNS记录
+   
+    我们也可以在现有的DNS系统中添加TXT记录，这样就能通过域名访问IPFS网络中的文件对象了。
 
 ## IPFS的应用领域
 
