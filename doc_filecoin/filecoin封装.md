@@ -434,6 +434,94 @@ where
     R: AsRef<Path>,
     S: AsRef<Path>,
     T: AsRef<Path>;
+// 生成逻辑
+{
+    // 生成compound_setup_params:
+    pub struct stacked::SetupParams {
+        pub nodes: usize,
+        pub degree: usize,
+        pub expansion_degree: usize,
+        pub porep_id: [u8; 32],
+        pub layer_challenges: LayerChallenges,
+        pub api_version: ApiVersion,
+    }
+    pub struct compound_proof::SetupParams<'a, S: ProofScheme<'a>> {
+        pub vanilla_params: <S as ProofScheme<'a>>::SetupParams,
+        pub partitions: Option<usize>,
+        pub priority: bool,
+    }
+
+    //由compound_setup_params生成compound_public_params
+    pub struct drgraph::BucketGraph<H: Hasher> {
+        nodes: usize,
+        base_degree: usize,
+        seed: [u8; 28],
+        api_version: ApiVersion,
+        _h: PhantomData<H>,
+    }
+
+    pub struct StackedGraph<H, G>
+    where
+        H: Hasher,
+        G: Graph<H> + 'static,
+    {
+        expansion_degree: usize,
+        base_graph: G,
+        pub(crate) feistel_keys: [feistel::Index; 4],
+        feistel_precomputed: FeistelPrecomputed,
+        api_version: ApiVersion,
+        id: String,
+        _h: PhantomData<H>,
+    }
+
+    pub struct PublicParams<Tree>
+    where
+        Tree: 'static + MerkleTreeTrait,
+    {
+        pub graph: StackedBucketGraph<Tree::Hasher>,
+        pub layer_challenges: LayerChallenges,
+        _t: PhantomData<Tree>,
+    }
+
+    pub struct PublicParams<'a, S: ProofScheme<'a>> {
+        pub vanilla_params: S::PublicParams,
+        pub partitions: Option<usize>,
+        pub priority: bool,
+    }
+}
+//总结:对于porep_config一样的配置，生成的compound_public_params就一样
+
+{
+    //生成merkle_tree获取comm_d
+}
+//总结:数据一致，comm_d一致
+
+{
+
+    struct IncrementingCursor {
+        cur: AtomicUsize,
+        cur_safe: AtomicUsize,
+    }
+    pub struct CacheReader<T> {
+        file: File,
+        bufs: UnsafeCell<[Mmap; 2]>,
+        size: usize,
+        degree: usize,
+        window_size: usize,
+        cursor: IncrementingCursor,
+        consumer: AtomicU64,
+        _t: PhantomData<T>,
+    }
+
+    
+
+}
+//总结:
+
+
+
+
+
 
 // 使用 Poseidon 哈希算法生成Merkle树
 pub fn seal_pre_commit_phase2<R, S, Tree: 'static + MerkleTreeTrait>(

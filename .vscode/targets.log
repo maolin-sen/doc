@@ -8,7 +8,7 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 # This program built for i386-apple-darwin11.3.0
  
 
-# Make data base, printed on Wed Jun  8 13:51:32 2022
+# Make data base, printed on Thu Aug 11 10:40:52 2022
 
 # Variables
 
@@ -16,50 +16,52 @@ make all --print-data-base --no-builtin-variables --no-builtin-rules --question
 <D = $(patsubst %/,%,$(dir $<))
 # automatic
 ?F = $(notdir $?)
-# environment
-VSCODE_LOG_NATIVE = false
 # automatic
 ?D = $(patsubst %/,%,$(dir $?))
+# environment
+FFI_BUILD_FROM_SOURCE = 1
 # automatic
 @D = $(patsubst %/,%,$(dir $@))
 # automatic
 @F = $(notdir $@)
 # makefile
-CURDIR := /Users/f3_x/rust/doc
+CURDIR := /Users/f3_x/doc
 # makefile
 SHELL = /bin/sh
 # environment
-VSCODE_NLS_CONFIG = {"locale":"zh-cn","availableLanguages":{"*":"zh-cn"},"_languagePackId":"42e84e0914b17800d483f69e299e1b00.zh-cn","_translationsConfigFile":"/Users/f3_x/Library/Application Support/Code/clp/42e84e0914b17800d483f69e299e1b00.zh-cn/tcf.json","_cacheRoot":"/Users/f3_x/Library/Application Support/Code/clp/42e84e0914b17800d483f69e299e1b00.zh-cn","_resolvedLanguagePackCoreLocation":"/Users/f3_x/Library/Application Support/Code/clp/42e84e0914b17800d483f69e299e1b00.zh-cn/c3511e6c69bb39013c4a4b7b9566ec1ca73fc4d5","_corruptedFile":"/Users/f3_x/Library/Application Support/Code/clp/42e84e0914b17800d483f69e299e1b00.zh-cn/corrupted.info","_languagePackSupport":true}
+BELLMAN_CPU_UTILIZATION = 1
 # environment
 _ = /usr/bin/make
 # makefile
 MAKEFILE_LIST := 
 # environment
-VSCODE_VERBOSE_LOGGING = true
+VSCODE_NLS_CONFIG = {"locale":"zh-cn","availableLanguages":{},"_languagePackSupport":true}
 # environment
 __CFBundleIdentifier = com.microsoft.VSCode
 # environment
-VSCODE_IPC_HOOK_EXTHOST = /var/folders/cs/bvq7pjb55yxbmh6928r7nnt40000gn/T/vscode-ipc-90f6358b-d47d-4c3f-9ff3-20cb9be007d9.sock
+CGO_CFLAGS = -D__BLST_PORTABLE__
 # environment
 VSCODE_CWD = /
 # environment
-GOPROXY = https://goproxy.cn,direct
+PATH = /Users/f3_x/.cargo/bin:/Users/f3_x/go/bin/:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin:/usr/local/protobuf/bin:/Users/f3_x/.wasmtime/bin
 # environment
-PATH = /Users/f3_x/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/go/bin
+FULLNODE_API_INFO = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJyZWFkIiwid3JpdGUiLCJzaWduIiwiYWRtaW4iXX0.Da2Shzql0U4F7dRYObXbpNV_8rF1I2FZqMHXzeDVIzI:/ip4/113.107.237.201/tcp/4003/http
 # environment
-VSCODE_LOG_STACK = false
+CGO_CFLAGS_ALLOW = -D__BLST_PORTABLE__
+# environment
+PROTOBUF = /usr/local/protobuf
+# environment
+LaunchInstanceID = 047BA4D4-7D5F-40D6-AF0C-2C815D91FD94
 # environment
 ELECTRON_RUN_AS_NODE = 1
 # default
 .FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
 # environment
-SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.XyaGvBWMjk/Listeners
+SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.HJgvuvXXE1/Listeners
 # automatic
 %F = $(notdir $%)
 # environment
-VSCODE_PIPE_LOGGING = true
-# environment
-PWD = /Users/f3_x/rust/doc
+PWD = /Users/f3_x/doc
 # environment
 ORIGINAL_XDG_CURRENT_DESKTOP = undefined
 # environment
@@ -69,15 +71,19 @@ HOME = /Users/f3_x
 # default
 MAKEFILEPATH = $(shell /usr/bin/xcode-select -print-path 2>/dev/null || echo /Developer)/Makefiles
 # environment
-VSCODE_CODE_CACHE_PATH = /Users/f3_x/Library/Application Support/Code/CachedData/c3511e6c69bb39013c4a4b7b9566ec1ca73fc4d5
+VSCODE_CODE_CACHE_PATH = /Users/f3_x/Library/Application Support/Code/CachedData/da76f93349a72022ca4670c1b84860304616aaa2
 # environment
 LOGNAME = f3_x
 # environment
 APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
 # environment
+WASMTIME_HOME = /Users/f3_x/.wasmtime
+# environment
 VSCODE_HANDLES_UNCAUGHT_ERRORS = true
 # automatic
 ^D = $(patsubst %/,%,$(dir $^))
+# environment
+FIL_PROOFS_USE_MULTICORE_SDR = 1
 # environment
 XPC_FLAGS = 0x0
 # default
@@ -92,10 +98,14 @@ MAKE_VERSION := 3.81
 USER = f3_x
 # makefile
 .DEFAULT_GOAL := 
+# environment
+HOMEBREW_BOTTLE_DOMAIN = https://mirrors.aliyun.com/homebrew/homebrew-bottles
 # automatic
 %D = $(patsubst %/,%,$(dir $%))
 # default
 MAKE_COMMAND := /Library/Developer/CommandLineTools/usr/bin/make
+# environment
+RUSTFLAGS = -C target-cpu=native -g
 # default
 .VARIABLES := 
 # environment
@@ -103,7 +113,9 @@ TMPDIR = /var/folders/cs/bvq7pjb55yxbmh6928r7nnt40000gn/T/
 # automatic
 *F = $(notdir $*)
 # environment
-VSCODE_IPC_HOOK = /Users/f3_x/Library/Application Support/Code/1.67.2-main.sock
+VSCODE_IPC_HOOK = /Users/f3_x/Library/Application Support/Code/1.70.0-main.sock
+# environment
+MallocNanoZone = 0
 # makefile
 MAKEFLAGS = Rrqp
 # environment
@@ -111,9 +123,11 @@ MFLAGS = -Rrqp
 # automatic
 *D = $(patsubst %/,%,$(dir $*))
 # environment
-XPC_SERVICE_NAME = application.com.microsoft.VSCode.2769289.2769295
+XPC_SERVICE_NAME = application.com.microsoft.VSCode.9323279.9323285
 # automatic
 +D = $(patsubst %/,%,$(dir $+))
+# environment
+FIL_PROOFS_MULTICORE_SDR_PRODUCERS = 1
 # automatic
 +F = $(notdir $+)
 # environment
@@ -126,6 +140,8 @@ MAKEFILES :=
 <F = $(notdir $<)
 # environment
 LC_ALL = C
+# environment
+SECURITYSESSIONID = 186a3
 # automatic
 ^F = $(notdir $^)
 # default
@@ -137,9 +153,9 @@ MAKELEVEL := 0
 # environment
 LANG = C
 # environment
-VSCODE_PID = 569
+VSCODE_PID = 617
 # variable set hash-table stats:
-# Load=63/1024=6%, Rehash=0, Collisions=1/84=1%
+# Load=71/1024=7%, Rehash=0, Collisions=2/92=2%
 
 # Pattern-specific Variable Values
 
@@ -147,9 +163,9 @@ VSCODE_PID = 569
 
 # Directories
 
-# . (device 16777220, inode 2464292): 21 files, no impossibilities.
+# . (device 16777220, inode 2464292): 20 files, no impossibilities.
 
-# 21 files, no impossibilities in 1 directories.
+# 20 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
@@ -221,7 +237,7 @@ GNUmakefile:
 # strcache size: total = 0 / max = 0 / min = 4096 / avg = 0
 # strcache free: total = 0 / max = 0 / min = 4096 / avg = 0
 
-# Finished Make data base on Wed Jun  8 13:51:32 2022
+# Finished Make data base on Thu Aug 11 10:40:52 2022
 
  
 make: *** No rule to make target `all'.  Stop.
