@@ -54,17 +54,362 @@ reflector使用listerWatcher获取资源，并将其保存在store中，此处�
 
 ### DeltaFIFO
 
+```go
+    //client-go/tools/cache/delta_fifo.go
+    type DeltaFIFO struct {
+        // lock/cond protects access to 'items' and 'queue'.
+        lock sync.RWMutex
+        cond sync.Cond
+
+        // We depend on the property that items in the set are in
+        // the queue and vice versa, and that all Deltas in this
+        // map have at least one Delta.
+        items map[string]Deltas
+        queue []string
+
+        // populated is true if the first batch of items inserted by Replace() has been populated
+        // or Delete/Add/Update was called first.
+        populated bool
+        // initialPopulationCount is the number of items inserted by the first call of Replace()
+        initialPopulationCount int
+
+        // keyFunc is used to make the key used for queued item
+        // insertion and retrieval, and should be deterministic.
+        keyFunc KeyFunc  //用于计算Delta的key
+
+        // knownObjects list keys that are "known", for the
+        // purpose of figuring out which items have been deleted
+        // when Replace() or Delete() is called.
+        knownObjects KeyListerGetter// Indication the queue is closed.
+        // Used to indicate a queue is closed so a control loop can exit when a queue is empty.
+        // Currently, not used to gate any of CRED operations.
+        closed     bool
+        closedLock sync.Mutex
+    }
+
+    // A KeyListerGetter is anything that knows how to list its keys and look up by key.
+    type KeyListerGetter interface {
+        KeyLister
+        KeyGetter
+    }
+
+    // A KeyLister is anything that knows how to list its keys.
+    type KeyLister interface {
+        ListKeys() []string
+    }
+
+    // A KeyGetter is anything that knows how to get the value stored under a given key.
+    type KeyGetter interface {
+        GetByKey(key string) (interface{}, bool, error)
+    }
+```
+
 ### Indexer
+
+Indexer保存了来自apiServer的资源。使用listWatch方式来维护资源的增量变化。通过这种方式可以减小对apiServer的访问，减轻apiServer端的压力。
+Indexer的接口定义如下，它继承了Store接口，Store中定义了对对象的增删改查等方法。
+
+```go
+    // client-go/tools/cache/index.go
+    type Indexer interface {
+        Store
+        // Retrieve list of objects that match on the named indexing function
+        Index(indexName string, obj interface{}) ([]interface{}, error)
+        // IndexKeys returns the set of keys that match on the named indexing function.
+        IndexKeys(indexName, indexKey string) ([]string, error)
+        // ListIndexFuncValues returns the list of generated values of an Index func
+        ListIndexFuncValues(indexName string) []string
+        // ByIndex lists object that match on the named indexing function with the exact key
+        ByIndex(indexName, indexKey string) ([]interface{}, error)
+        // GetIndexer return the indexers
+        GetIndexers() Indexers
+        // AddIndexers adds more indexers to this store.
+        // If you call this after you already have data
+        // in the store, the results are undefined.
+        AddIndexers(newIndexers Indexers) error
+    }
+
+
+    // client-go/tools/cache/store.go
+    type Store interface {
+        Add(obj interface{}) error
+        Update(obj interface{}) error
+        Delete(obj interface{}) error
+        List() []interface{}
+        ListKeys() []string
+        Get(obj interface{}) (item interface{}, exists bool, err error)
+        GetByKey(key string) (item interface{}, exists bool, err error)
+
+        // Replace will delete the contents of the store,
+        // using instead the given list. Store takes ownership
+        // of the list, you should not reference
+        // it after calling this function.
+        Replace([]interface{}, string) error
+        Resync() error
+    }
+```
 
 ### ListWatch
 
+Lister用于获取某个资源(如Pod)的全量，Watcher用于获取某个资源的增量变化。实际使用中Lister和Watcher都从apiServer获取资源信息，Lister一般用于首次获取某资源(如Pod)的全量信息，而Watcher用于持续获取该资源的增量变化信息。Lister和Watcher的接口定义如下，使用NewListWatchFromClient函数来初始化ListerWatcher
+
+```go
+    // client-go/tools/cache/listwatch.go
+    type Lister interface {
+        // List should return a list type object; the Items field will be extracted, and the
+        // ResourceVersion field will be used to start the watch in the right place.
+        List(options metav1.ListOptions) (runtime.Object, error)
+    }
+
+    // Watcher is any object that knows how to start a watch on a resource.
+    type Watcher interface {
+        // Watch should begin a watch at the specified version.
+        Watch(options metav1.ListOptions) (watch.Interface, error)
+    }
+
+    // ListerWatcher is any object that knows how to perform an initial list and start a watch on a resource.
+    type ListerWatcher interface {
+        Lister
+        Watcher
+    }
+```
+
+
+
 ### Controller
+
+controller的结构如下，其包含一个配置变量config，在注释中可以看到Config.Queue就是DeltaFIFO。controller定义了如何调度Reflector。
+
+```go
+    // client-go/tools/cache/controller.go
+    type controller struct {
+        config         Config
+        reflector      *Reflector
+        reflectorMutex sync.RWMutex
+        clock          clock.Clock
+    }
+
+    // client-go/tools/cache/controller.go
+    type Config struct {
+        // The queue for your objects - has to be a DeltaFIFO due to
+        // assumptions in the implementation. Your Process() function
+        // should accept the output of this Queue's Pop() method.
+        Queue
+        // Something that can list and watch your objects.
+        ListerWatcher
+        // Something that can process your objects.
+        Process ProcessFunc
+        // The type of your objects.
+        ObjectType runtime.Object
+        // Reprocess everything at least this often.
+        // Note that if it takes longer for you to clear the queue than this
+        // period, you will end up processing items in the order determined
+        // by FIFO.Replace(). Currently, this is random. If this is a
+        // problem, we can change that replacement policy to append new
+        // things to the end of the queue instead of replacing the entire
+        // queue.
+        FullResyncPeriod time.Duration
+        // ShouldResync, if specified, is invoked when the controller's reflector determines the next
+        // periodic sync should occur. If this returns true, it means the reflector should proceed with
+        // the resync.
+        ShouldResync ShouldResyncFunc
+        // If true, when Process() returns an error, re-enqueue the object.
+        // TODO: add interface to let you inject a delay/backoff or drop
+        //       the object completely if desired. Pass the object in
+        //       question to this interface as a parameter.
+        RetryOnError bool
+    }
+
+```
+
+controller的框架比较简单。
+    1. 它使用wg.StartWithChannel启动Reflector.Run，相当于启动了一个DeltaFIFO的生产者(wg.StartWithChannel(stopCh, r.Run)表示可以将r.Run放在独立的协程运行，并可以使用stopCh来停止r.Run)；
+    2. 使用wait.Until来启动一个消费者(wait.Until(c.processLoop, time.Second, stopCh)表示每秒会触发一次c.processLoop，但如果c.processLoop在1秒之内没有结束，则运行c.processLoop继续运行，不会结束其运行状态)
+
+```go
+    // client-go/tools/cache/controller.go
+    func (c *controller) Run(stopCh <-chan struct{}) {
+        defer utilruntime.HandleCrash()
+        go func() {
+            <-stopCh
+            c.config.Queue.Close()
+        }()
+        r := NewReflector(
+            c.config.ListerWatcher,
+            c.config.ObjectType,
+            c.config.Queue,
+            c.config.FullResyncPeriod,
+        )
+        r.ShouldResync = c.config.ShouldResync
+        r.clock = c.clock
+
+        c.reflectorMutex.Lock()
+        c.reflector = r
+        c.reflectorMutex.Unlock()
+
+        var wg wait.Group
+        defer wg.Wait()
+
+        wg.StartWithChannel(stopCh, r.Run)
+
+        wait.Until(c.processLoop, time.Second, stopCh)
+    }
+```
+processLoop的框架也很简单，它运行了DeltaFIFO.Pop函数，用于消费DeltaFIFO中的对象，并在DeltaFIFO.Pop运行失败后可能重新处理该对象(AddIfNotPresent)
+
+```go
+    // client-go/tools/cache/controller.go
+    func (c *controller) processLoop() {
+        for {
+            obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
+            if err != nil {
+                if err == FIFOClosedError {
+                    return
+                }
+                if c.config.RetryOnError {
+                    // This is the safe way to re-enqueue.
+                    c.config.Queue.AddIfNotPresent(obj)
+                }
+            }
+        }
+    }
+
+    //client-go/tools/cache/shared_informer.go
+    func (s *sharedIndexInformer) Run(stopCh <-chan struct{}) {
+        defer utilruntime.HandleCrash()
+
+        fifo := NewDeltaFIFO(MetaNamespaceKeyFunc, s.indexer)
+
+        cfg := &Config{
+            Queue:            fifo,
+            ListerWatcher:    s.listerWatcher,
+            ObjectType:       s.objectType,
+            FullResyncPeriod: s.resyncCheckPeriod,
+            RetryOnError:     false,
+            ShouldResync:     s.processor.shouldResync,
+
+            Process: s.HandleDeltas,
+        }
+    ...
+```
+
 
 ### ShareInformer
 
+下图为SharedInformer的运行图。可以看出SharedInformer启动了controller，reflector，并将其与Indexer结合起来。
+
 ### SharedInformerFactory
 
+sharedInformerFactory接口的内容如下，它按照group和version对informer进行了分类。
+
+```go
+    // client-go/informers/factory.go
+    type SharedInformerFactory interface {
+        internalinterfaces.SharedInformerFactory
+        ForResource(resource schema.GroupVersionResource) (GenericInformer, error)
+        WaitForCacheSync(stopCh <-chan struct{}) map[reflect.Type]bool
+
+        Admissionregistration() admissionregistration.Interface
+        Apps() apps.Interface
+        Auditregistration() auditregistration.Interface
+        Autoscaling() autoscaling.Interface
+        Batch() batch.Interface
+        Certificates() certificates.Interface
+        Coordination() coordination.Interface
+        Core() core.Interface
+        Events() events.Interface
+        Extensions() extensions.Interface
+        Networking() networking.Interface
+        Node() node.Interface
+        Policy() policy.Interface
+        Rbac() rbac.Interface
+        Scheduling() scheduling.Interface
+        Settings() settings.Interface
+        Storage() storage.Interface
+    }
+```
+sharedInformerFactory负责在不同的chan中启动不同的informer
+
+```go
+    // client-go/informers/factory.go
+    func (f *sharedInformerFactory) Start(stopCh <-chan struct{}) {
+        f.lock.Lock()
+        defer f.lock.Unlock()
+
+        for informerType, informer := range f.informers {
+            if !f.startedInformers[informerType] {
+                go informer.Run(stopCh)
+                f.startedInformers[informerType] = true
+            }
+        }
+    }
+```
+
+那sharedInformerFactory启动的informer又是怎么注册到sharedInformerFactory.informers中的呢？informer的注册函数统一为InformerFor，代码如下，所有类型的informer都会调用该函数注册到sharedInformerFactory。
+
+```go
+
+    // client-go/informers/factory.go
+    func (f *sharedInformerFactory) InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer {
+        f.lock.Lock()
+        defer f.lock.Unlock()
+
+        informerType := reflect.TypeOf(obj)
+        informer, exists := f.informers[informerType]
+        if exists {
+            return informer
+        }
+
+        resyncPeriod, exists := f.customResync[informerType]
+        if !exists {
+            resyncPeriod = f.defaultResync
+        }
+
+        informer = newFunc(f.client, resyncPeriod)
+        f.informers[informerType] = informer
+
+        return informer
+    }
+
+```
+
 ### workqueue
+
+indexer用于保存apiserver的资源信息，而workqueue用于保存informer中的handler处理之后的数据。workqueue的接口定义如下： 
+
+```go
+    // client-go/util/workqueue/queue.go
+    type Interface interface {
+        Add(item interface{})
+        Len() int
+        Get() (item interface{}, shutdown bool)
+        Done(item interface{})
+        ShutDown()
+        ShuttingDown() bool
+    }
+
+    // Type is a work queue.
+    type Type struct {
+        // queue defines the order in which we will work on items. Every
+        // element of queue should be in the dirty set and not in the
+        // processing set.
+        queue []t
+        // dirty defines all of the items that need to be processed.
+        dirty set
+        // Things that are currently being processed are in the processing set.
+        // These things may be simultaneously in the dirty set. When we finish
+        // processing something and remove it from this set, we'll check if
+        // it's in the dirty set, and if so, add it to the queue.
+        processing set
+        cond *sync.Cond
+        shuttingDown bool
+        metrics queueMetrics
+        unfinishedWorkUpdatePeriod time.Duration
+        clock                      clock.Clock
+    }
+```
+
+
 
 
 ## Kubernetes的informer原理
