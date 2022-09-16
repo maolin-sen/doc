@@ -1,5 +1,385 @@
 # client-go 源码分析
 
+
+## kubernetes client-go解析
+
+下图为来自官方的Client-go架构图:
+![]()
+
+### Reflector
+
+reflector使用listerWatcher获取资源，并将其保存在store中，此处的store就是DeltaFIFO，Reflector核心处理函数为ListAndWatch(client-go/tools/cache/reflector.go)。ListAndWatch在Reflector.Run函数中启动，并以Reflector.period周期性进行调度。ListAndWatch使用resourceVersion来获取资源的增量变化：在List时会获取资源的首个resourceVersion值，在Watch的时候会使用List获取的resourceVersion来获取资源的增量变化，然后将获取到的资源的resourceVersion保存起来，作为下一次Watch的基线。
+
+```go
+    // client-go/tools/cache/reflector.go
+    type Reflector struct {
+        // name identifies this reflector. By default it will be a 
+        // file:line if possible.
+        name string
+        // metrics tracks basic metric information about the reflector
+        metrics *reflectorMetrics
+        // The type of object we expect to place in the store.
+        expectedType reflect.Type
+        // The destination to sync up with the watch source
+        store Store
+        // listerWatcher is used to perform lists and watches.
+        listerWatcher ListerWatcher
+        // period controls timing between one watch ending and
+        // the beginning of the next one.
+        period       time.Duration
+        resyncPeriod time.Duration
+        ShouldResync func() bool
+        // clock allows tests to manipulate time
+        clock clock.Clock
+        // lastSyncResourceVersion is the resource version token last
+        // observed when doing a sync with the underlying store
+        // it is thread safe, but not synchronized with the underlying store
+        lastSyncResourceVersion string
+        // lastSyncResourceVersionMutex guards read/write access to lastSyncResourceVersion
+        lastSyncResourceVersionMutex sync.RWMutex
+        // WatchListPageSize is the requested chunk size of initial and resync watch lists.
+        // Defaults to pager.PageSize.
+        WatchListPageSize int64
+    }
+
+    // client-go/tools/cache/reflector.go
+    func (r *Reflector) Run(stopCh <-chan struct{}) {
+        wait.Until(func() {
+            if err := r.ListAndWatch(stopCh); err != nil {
+                utilruntime.HandleError(err)
+            }
+        }, r.period, stopCh)
+    }
+```
+
+### DeltaFIFO
+
+### Indexer
+
+### ListWatch
+
+### Controller
+
+### ShareInformer
+
+### SharedInformerFactory
+
+### workqueue
+
+
+## Kubernetes的informer原理
+
+Kubernetes的控制器模式是其非常重要的一个设计模式，整个Kubernetes定义的资源对象以及其状态都保存在etcd数据库中，通过apiserver对其进行增删查改，而各种各样的控制器需要从apiserver及时获取这些对象，然后将其应用到实际中，即将这些对象的实际状态调整为期望状态，让他们保持匹配。
+
+不过这因为这样，各种控制器需要和apiserver进行频繁交互，需要能够及时获取对象状态的变化，而如果简单的通过暴力轮询的话，会给apiserver造成很大的压力，且效率很低，因此，Kubernetes设计了Informer这个机制，用来作为控制器跟apiserver交互的桥梁，它主要有两方面的作用：
+1. 依赖Etcd的List&Watch机制，在本地维护了一份目标对象的缓存。
+    ```
+        Etcd的Watch机制能够使客户端及时获知这些对象的状态变化，然后通过List机制，更新本地缓存，这样就在客户端为这些API对象维护了一份和Etcd数据库中几乎一致的数据，然后控制器等客户端就可以直接访问缓存获取对象的信息，而不用去直接访问apiserver，这一方面显著提高了性能，另一方面则大大降低了对apiserver的访问压力；
+    ``` 
+2. 依赖Etcd的Watch机制，触发控制器等客户端注册到Informer中的事件方法。
+    ```
+        客户端可能会对某些对象的某些事件感兴趣，当这些事件发生时，希望能够执行某些操作，比如通过apiserver新建了一个pod，那么kube-scheduler中的控制器收到了这个事件，然后将这个pod加入到其队列中，等待进行调度。
+    ```
+Kubernetes的各个组件本身就内置了非常多的控制器，而自定义的控制器也需要通过Informer跟apiserver进行交互，因此，Informer在Kubernetes中应用非常广泛，下面重点分析下Informer的机制原理，以加深对其的理解。
+
+### 使用方法
+
+先来看看Informer是怎么用的，以Endpoint为例，来看下其使用Informer的相关代码：
+
+* 创建Informer工厂
+  
+    ```go
+        # client-go/informers/factory.go
+
+        // SharedInformerFactory provides access to a shared informer and lister for dynamic client
+        type SharedInformerFactory interface {
+            Start(stopCh <-chan struct{})
+            ForResource(gvr schema.GroupVersionResource) informers.GenericInformer
+            WaitForCacheSync(stopCh <-chan struct{}) map[schema.GroupVersionResource]bool
+        }
+        sharedInformers := informers.NewSharedInformerFactory(versionedClient, ResyncPeriod(s)())
+    ```
+    首先创建了一个SharedInformerFactory，这个结构主要有两个作用：
+    1. 一个是用来作为创建Informer的工厂，典型的工厂模式，在Kubernetes中这种设计模式也很常用；
+    2. 一个是共享Informer，所谓共享，就是多个Controller可以共用同一个Informer，因为不同的Controller可能对同一种API对象感兴趣，这样相同的API对象，缓存就只有一份，通知机制也只有一套，大大提高了效率，减少了资源浪费。
+   
+* 创建对象Informer结构体
+
+    ```go
+        # client-go/informers/core/v1/endpoints.go
+
+        type EndpointsInformer interface {
+            Informer() cache.SharedIndexInformer
+            Lister() v1.EndpointsLister
+        }
+        endpointsInformer := kubeInformerFactory.Core().V1().Endpoints()
+    ```
+    使用InformerFactory创建出对应版本的对象的Informer结构体，如Endpoints对象对应的就是EndpointsInformer结构体，该结构体实现了两个方法：Informer()和Lister()
+      1. 前者用来构建出最终的Informer，即我们本篇文章的重点：SharedIndexInformer，
+      2. 后者用来获取创建出来的Informer的缓存接口：Indexer，该接口可以用来查询缓存的数据。
+
+* 注册事件方法
+  
+    ```go
+        # Client-go/tools/cache/shared_informer.go
+
+        informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+            AddFunc:    onAdd,
+            UpdateFunc: func(interface{}, interface{}) { fmt.Println("update not implemented") }, // 此处省略 workqueue 的使用
+            DeleteFunc: func(interface{}) { fmt.Println("delete not implemented") },
+        })
+
+        func onAdd(obj interface{}) {
+            node := obj.(*corev1.Endpoint)
+            fmt.Println("add a endpoint:", endpoint.Name)
+        }
+    ```
+    1. 调用Infomer()创建出来SharedIndexInformer，然后向其中注册事件方法，这样当有对应的事件发生时，就会触发这里注册的方法去做相应的事情。
+    2. 调用Lister()获取到缓存接口，就可以通过它来查询Informer中缓存的数据了，而且Informer中缓存的数据，是可以有索引的，这样可以加快查询的速度。
+   
+* 启动Informer
+  
+    ```go
+        # kubernetes/cmd/kube-controller-manager/app/controllermanager.go
+        controllerContext.InformerFactory.Start(controllerContext.Stop)
+    ```
+    这里InformerFactory的启动，会遍历Factory中创建的所有Informer，依次将其启动。
+
+### 机制解析
+
+Informer的实现都是在client-go这个库中，通过上述的工厂方法，其实最终创建出来的是一个叫做SharedIndexInformer的结构体：
+
+```go
+    # k8s.io/client-go/tools/cache/shared_informer.go
+
+    type sharedIndexInformer struct {
+        indexer    Indexer
+        controller Controller
+
+        processor             *sharedProcessor
+        cacheMutationDetector MutationDetector
+
+        listerWatcher ListerWatcher
+        ......
+    }
+
+    func NewSharedIndexInformer(lw ListerWatcher, exampleObject runtime.Object, defaultEventHandlerResyncPeriod time.Duration, indexers Indexers) SharedIndexInformer {
+        realClock := &clock.RealClock{}
+        sharedIndexInformer := &sharedIndexInformer{
+            processor:                       &sharedProcessor{clock: realClock},
+            indexer:                         NewIndexer(DeletionHandlingMetaNamespaceKeyFunc, indexers),
+            listerWatcher:                   lw,
+            objectType:                      exampleObject,
+            resyncCheckPeriod:               defaultEventHandlerResyncPeriod,
+            defaultEventHandlerResyncPeriod: defaultEventHandlerResyncPeriod,
+            cacheMutationDetector:           NewCacheMutationDetector(fmt.Sprintf("%T", exampleObject)),
+            clock:                           realClock,
+        }
+        return sharedIndexInformer
+    }
+```
+可以看到，在创建SharedIndexInformer时，就创建出了processor, indexer等结构，而在Informer启动时，还创建出了controller, fifo queue, reflector等结构。
+
+### Reflector
+
+Reflector的作用，就是通过List&Watch的方式，从apiserver获取到感兴趣的对象以及其状态，然后将其放到一个称为”Delta”的先进先出队列中。所谓的Delta FIFO Queue，就是队列中的元素除了对象本身外，还有针对该对象的事件类型：
+
+```go
+    type Delta struct {
+        Type   DeltaType
+        Object interface{}
+    }
+```
+
+目前有5种Type: Added, Updated, Deleted, Replaced, Resync，所以，针对同一个对象，可能有多个Delta元素在队列中，表示对该对象做了不同的操作，比如短时间内，多次对某一个对象进行了更新操作，那么就会有多个Updated类型的Delta放入到队列中。后续队列的消费者，可以根据这些Delta的类型，来回调注册到Informer中的事件方法。
+而所谓的List&Watch，就是
+
+  1. 先调用该API对象的List接口，获取到对象列表，将它们添加到队列中，Delta元素类型为Replaced，
+  2. 然后再调用Watch接口，持续监听该API对象的状态变化事件，将这些事件按照不同的事件类型，组成对应的Delta类型，添加到队列中，Delta元素类型有Added, Updated, Deleted三种。
+   
+此外，Informer还会周期性的发送Resync类型的Delta元素到队列中，目的是为了周期性的触发注册到Informer中的事件方法UpdateFunc，保证对象的期望状态和实际状态一致，该周期是由一个叫做resyncPeriod的参数决定的，在向Informer中添加EventHandler时，可以指定该参数，若为0的话，则关闭该功能。需要注意的是，Resync类型的Delta元素中的对象，是通过Indexer从缓存中获取到的，而不是直接从apiserver中拿的，即这里resync的，其实是”缓存”的对象的期望状态和实际状态的一致性。
+
+根据以上Reflector的机制，依赖Etcd的Watch机制，通过事件来获知对象变化状态，建立本地缓存。即使在Informer中，也没有周期性的调用对象的List接口，正常情况下，List&Watch只会执行一次，即先执行List把数据拉过来，放入队列中，后续就进入Watch阶段。
+
+那什么时候才会再执行List呢？其实就是异常的时候，在List或者Watch的过程中，如果有异常，比如apiserver重启了，那么Reflector就开始周期性的执行List&Watch，直到再次正常进入Watch阶段。为了在异常时段，不给apiserver造成压力，这个周期是一个称为backoff的可变的时间间隔，默认是一个指数型的间隔，即越往后重试的间隔越长，到一定时间又会重置回一开始的频率。而且，为了让不同的apiserver能够均匀负载这些Watch请求，客户端会主动断开跟apiserver的连接，这个超时时间为60秒，然后重新发起Watch请求。此外，在控制器重启过程中，也会再次执行List，所以会观察到之前已经创建好的API对象，又重新触发了一遍AddFunc方法。
+
+从以上这些点，可以看出来，Kubernetes在性能和稳定性的提升上，还是下了很多功夫的。
+
+### Controller
+
+这里Controller的作用是通过轮询不断从队列中取出Delta元素，根据元素的类型，一方面通过Indexer更新本地的缓存，一方面调用Processor来触发注册到Informer的事件方法：
+
+```go
+    # k8s.io/client-go/tools/cache/controller.go
+
+
+    func (c *controller) processLoop() {
+        for {
+            obj, err := c.config.Queue.Pop(PopProcessFunc(c.config.Process))
+        }
+    }
+```
+
+这里的c.config.Process是定义在shared_informer.go中的HandleDeltas()方法：
+
+```go
+    # k8s.io/client-go/tools/cache/shared_informer.go
+
+
+    func (s *sharedIndexInformer) HandleDeltas(obj interface{}) error {
+        s.blockDeltas.Lock()
+        defer s.blockDeltas.Unlock()
+
+
+        // from oldest to newest
+        for _, d := range obj.(Deltas) {
+            switch d.Type {
+            case Sync, Replaced, Added, Updated:
+                s.cacheMutationDetector.AddObject(d.Object)
+                if old, exists, err := s.indexer.Get(d.Object); err == nil && exists {
+                    if err := s.indexer.Update(d.Object); err != nil {
+                        return err
+                    }
+
+
+                    isSync := false
+                    switch {
+                    case d.Type == Sync:
+                        // Sync events are only propagated to listeners that requested resync
+                        isSync = true
+                    case d.Type == Replaced:
+                        if accessor, err := meta.Accessor(d.Object); err == nil {
+                            if oldAccessor, err := meta.Accessor(old); err == nil {
+                                // Replaced events that didn't change resourceVersion are treated as resync events
+                                // and only propagated to listeners that requested resync
+                                isSync = accessor.GetResourceVersion() == oldAccessor.GetResourceVersion()
+                            }
+                        }
+                    }
+                    s.processor.distribute(updateNotification{oldObj: old, newObj: d.Object}, isSync)
+                } else {
+                    if err := s.indexer.Add(d.Object); err != nil {
+                        return err
+                    }
+                    s.processor.distribute(addNotification{newObj: d.Object}, false)
+                }
+            case Deleted:
+                if err := s.indexer.Delete(d.Object); err != nil {
+                    return err
+                }
+                s.processor.distribute(deleteNotification{oldObj: d.Object}, false)
+            }
+        }
+        return nil
+    }
+```
+
+#### Processer & Listener
+
+Processer和Listener则是触发事件方法的机制，在创建Informer时会创建一个Processer，而在向Informer中通过调用AddEventHandler()注册事件方法时会为每一个Handler生成一个Listener，然后将该Lisener中添加到Processer中，每一个Listener中有两个channel：addCh和nextCh。Listener通过select监听在这两个channel上，当Controller从队列中取出新的元素时会调用processer来给它的listener发送“通知”，这个“通知”就是向addCh中添加一个元素，即add()，然后一个goroutine就会将这个元素从addCh转移到nextCh，即pop()，从而触发另一个goroutine执行注册的事件方法，即run()。
+
+```go
+    # k8s.io/client-go/tools/cache/shared_informer.go
+
+    func (p *sharedProcessor) distribute(obj interface{}, sync bool) {
+        p.listenersLock.RLock()
+        defer p.listenersLock.RUnlock()
+
+
+        if sync {
+            for _, listener := range p.syncingListeners {
+                listener.add(obj)
+            }
+        } else {
+            for _, listener := range p.listeners {
+                listener.add(obj)
+            }
+        }
+    }
+
+
+    func (p *processorListener) add(notification interface{}) {
+        p.addCh <- notification
+    }
+
+
+    func (p *processorListener) pop() {
+        defer utilruntime.HandleCrash()
+        defer close(p.nextCh) // Tell .run() to stop
+
+
+        var nextCh chan<- interface{}
+        var notification interface{}
+        for {
+            select {
+            case nextCh <- notification:
+                // Notification dispatched
+                var ok bool
+                notification, ok = p.pendingNotifications.ReadOne()
+                if !ok { // Nothing to pop
+                    nextCh = nil // Disable this select case
+                }
+            case notificationToAdd, ok := <-p.addCh:
+                if !ok {
+                    return
+                }
+                if notification == nil { // No notification to pop (and pendingNotifications is empty)
+                    // Optimize the case - skip adding to pendingNotifications
+                    notification = notificationToAdd
+                    nextCh = p.nextCh
+                } else { // There is already a notification waiting to be dispatched
+                    p.pendingNotifications.WriteOne(notificationToAdd)
+                }
+            }
+        }
+    }
+
+
+    func (p *processorListener) run() {
+        // this call blocks until the channel is closed.  When a panic happens during the notification
+        // we will catch it, **the offending item will be skipped!**, and after a short delay (one second)
+        // the next notification will be attempted.  This is usually better than the alternative of never
+        // delivering again.
+        stopCh := make(chan struct{})
+        wait.Until(func() {
+            for next := range p.nextCh {
+                switch notification := next.(type) {
+                case updateNotification:
+                    p.handler.OnUpdate(notification.oldObj, notification.newObj)
+                case addNotification:
+                    p.handler.OnAdd(notification.newObj)
+                case deleteNotification:
+                    p.handler.OnDelete(notification.oldObj)
+                default:
+                    utilruntime.HandleError(fmt.Errorf("unrecognized notification: %T", next))
+                }
+            }
+            // the only way to get here is if the p.nextCh is empty and closed
+            close(stopCh)
+        }, 1*time.Second, stopCh)
+    }
+```
+#### Indexer
+
+Indexer是对缓存进行增删查改的接口，缓存本质上就是用map构建的key:value键值对，都存在items这个map中，key为<namespace>/<name>：
+
+```go
+    type threadSafeMap struct {
+        lock  sync.RWMutex
+        items map[string]interface{}
+        // indexers maps a name to an IndexFunc
+        indexers Indexers
+        // indices maps a name to an Index
+        indices Indices
+    }
+```
+而为了加速查询，还可以选择性的给这些缓存添加索引，索引存储在indecies中，所谓索引，就是在向缓存中添加记录时，就将其key添加到索引结构中，在查找时，可以根据索引条件，快速查找到指定的key记录，比如默认有个索引是按照namespace进行索引，可以根据快速找出属于某个namespace的某种对象，而不用去遍历所有的缓存。
+
+### 总结
+
+本篇对Kubernetes Informer的使用方法和实现原理，进行了深入分析，整体上看，Informer的设计是相当不错的，基于事件机制，一方面构建本地缓存，一方面触发事件方法，使得控制器能够快速响应和快速获取数据，此外，还有诸如共享Informer, resync, index, watch timeout等机制，使得Informer更加高效和稳定，有了Informer，控制器模式可以说是如虎添翼。 
+
+
 ## client-go的SharedInformerFactory
 
 ```go
@@ -659,3 +1039,79 @@ ListerWatcher是针对某一类对象的，比如Pod，不是所有对象的，�
 ##### sharedProcessor管理processorListener
 
 #### SharedInformer实现
+
+## client-go的DeltaFIFO
+
+```go
+    // 代码源自client-go/tools/cache/delta_fifo.go
+
+    // 下面类型出现顺序是为了方便读者理解
+    type Delta struct {
+        Type   DeltaType       // Delta类型，比如增、减，后面有详细说明
+        Object interface{}     // 对象，Delta的粒度是一个对象
+    }
+
+    type DeltaType string    // Delta的类型用字符串表达
+    const (
+        Added   DeltaType = "Added"    // 增加
+        Updated DeltaType = "Updated"  // 更新
+        Deleted DeltaType = "Deleted"  // 删除
+        Sync DeltaType = "Sync"        // 同步
+    )
+
+    type Deltas []Delta // Delta数组
+
+    // 就是返回所有的keys。
+    type KeyLister interface {
+        ListKeys() []string
+    }
+
+    // 就是通过key获取对象
+    type KeyGetter interface {
+        GetByKey(key string) (interface{}, bool, error)
+    }
+
+    // 这个接口类型就是上面两个接口类型的组合了
+    type KeyListerGetter interface {
+        KeyLister
+        KeyGetter
+    }
+```
+Delta其实就是kubernetes系统中对象的变化(增、删、改、同步)，FIFO比较好理解，是一个先入先出的队列，那么DeltaFIFO就是一个按序的(先入先出)kubernetes对象变化的队列。
+
+```go
+    // 代码源自client-go/tools/cache/fifo.go
+
+    // 这个才是FIFO的抽象，DeltaFIFO只是FIFO的一种实现。
+    type Queue interface {
+        Store    // 实现了存储接口,这个很好理解，FIFO也是一种存储
+        Pop(PopProcessFunc) (interface{}, error) // 在存储的基础上增加了Pop接口，用于弹出对象
+        AddIfNotPresent(interface{}) error  // 对象如果不在队列中就添加
+        HasSynced() bool  // 通过Replace()放入第一批对象到队列中并且已经被Pop()全部取走
+        Close()  // 关闭队列
+    }
+```
+Queue是在Store基础上扩展了Pop接口可以让对象有序的弹出，Indexer是在Store基础上建立了索引，可以快速检索对象。
+
+### DeltaFIFO实现
+
+```go
+    // 代码源自client-go/tools/cache/delta_fifo.go
+
+    type DeltaFIFO struct {
+        lock sync.RWMutex             // 读写锁，因为涉及到同时读写，读写锁性能要高
+        cond sync.Cond                // 给Pop()接口使用，在没有对象的时候可以阻塞，内部锁复用读写锁
+        items map[string]Deltas       // 这个应该是Store的本质了，按照kv的方式存储对象，但是存储的是对象的Deltas数组
+        queue []string                // 这个是为先入先出实现的，存储的就是对象的键
+        populated bool                // 通过Replace()接口将第一批对象放入队列，或者第一次调用增、删、改接口时标记为true
+        initialPopulationCount int    // 通过Replace()接口将第一批对象放入队列的对象数量
+        keyFunc KeyFunc               // 对象键计算函数
+        knownObjects KeyListerGetter  // 前面介绍就是为了这是用，该对象指向的就是Indexer，
+        closed     bool               // 是否已经关闭的标记
+        closedLock sync.Mutex         // 专为关闭设计的所，为什么不复用读写锁？
+    }
+```
+
+## client-go的Indexer
+
+## client-go的workqueue
